@@ -26,6 +26,8 @@ git commit -m "Build LingoPress reading MVP"
 git push -u origin main
 ```
 
+Code hiện đã có commit local. Lần push được kiểm tra trong phiên này bị GitHub trả HTTP 403 vì tài khoản Git đang đăng nhập không có quyền ghi vào repository trên. Cần đăng nhập GitHub bằng tài khoản có quyền ghi hoặc cấp quyền cho tài khoản Git hiện tại, rồi chạy lại `git push -u origin main`. Không đổi remote sang repository khác chỉ để né lỗi quyền truy cập.
+
 Kiểm tra `git status` trước khi commit: `.env` không được xuất hiện trong danh sách file đưa lên.
 
 ## 2. Tạo frontend Vercel
