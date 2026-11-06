@@ -7,46 +7,136 @@ import {
   Trash2,
   Search,
   LoaderCircle,
+  CheckCircle2,
+  Circle,
+  RotateCcw,
 } from "lucide-react";
 import { Header, Footer } from "@/components/header";
-import { api, Word } from "@/lib/api";
+import { api, ApiError, Word } from "@/lib/api";
+import {
+  readLocalWords,
+  markLocalWord,
+  deleteLocalWord,
+  filterWords,
+  WORDS_STORAGE_KEY,
+  type WordFilter,
+} from "./saved-words";
+
 export default function WordBook() {
-  const [words, setWords] = useState<Word[]>([]),
-    [local, setLocal] = useState(false),
-    [loading, setLoading] = useState(true),
-    [query, setQuery] = useState(""),
-    [error, setError] = useState("");
+  const [words, setWords] = useState<Word[]>([]);
+  const [local, setLocal] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<WordFilter>("all");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState<string[]>([]);
+  const [version, setVersion] = useState(0);
   useEffect(() => {
-    api<{ words: Word[] }>("/words")
-      .then((d) => setWords(d.words))
-      .catch(() => {
-        setLocal(true);
-        try {
+    const controller = new AbortController();
+    setLoading(true);
+    setError("");
+    setLocal(false);
+    api<{ words: Word[] }>("/words", { signal: controller.signal })
+      .then((data) => {
+        if (!controller.signal.aborted)
           setWords(
-            JSON.parse(localStorage.getItem("lingopress-words") || "[]"),
+            data.words.map((word) => ({ ...word, known: word.known === true })),
           );
-        } catch {
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        if (error instanceof ApiError && error.status === 401) {
+          setLocal(true);
+          try {
+            setWords(readLocalWords());
+          } catch {
+            setWords([]);
+            setError(
+              "Chưa đọc được sổ từ trên trình duyệt. Dữ liệu của bạn chưa bị thay đổi.",
+            );
+          }
+        } else {
           setWords([]);
+          setError(
+            error instanceof Error
+              ? error.message
+              : "Chưa tải được sổ từ. Hãy thử lại.",
+          );
         }
       })
-      .finally(() => setLoading(false));
-  }, []);
-  async function remove(id: string) {
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [version]);
+  useEffect(() => {
+    if (!local) return;
+    function sync(event: StorageEvent) {
+      if (event.key !== WORDS_STORAGE_KEY && event.key !== null) return;
+      try {
+        setWords(readLocalWords());
+      } catch {
+        setError("Chưa đọc được thay đổi từ tab khác. Hãy tải lại sổ từ.");
+      }
+    }
+    window.addEventListener("storage", sync);
+    return () => window.removeEventListener("storage", sync);
+  }, [local]);
+
+  async function changeKnown(word: Word) {
+    if (busy.includes(word.id)) return;
+    setBusy((previous) => [...previous, word.id]);
+    setError("");
     try {
-      if (local) {
-        localStorage.setItem(
-          "lingopress-words",
-          JSON.stringify(words.filter((w) => w.id !== id)),
+      const known = word.known !== true;
+      if (local) setWords(markLocalWord(word.id, known));
+      else {
+        const data = await api<{ word: Word }>(
+          `/words/${encodeURIComponent(word.id)}`,
+          { method: "PATCH", body: JSON.stringify({ known }) },
         );
-      } else await api(`/words/${id}`, { method: "DELETE" });
-      setWords((w) => w.filter((x) => x.id !== id));
-    } catch (e) {
-      setError((e as Error).message);
+        setWords((previous) =>
+          previous.map((entry) => (entry.id === word.id ? data.word : entry)),
+        );
+      }
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Chưa đổi được trạng thái từ. Hãy thử lại.",
+      );
+    } finally {
+      setBusy((previous) => previous.filter((id) => id !== word.id));
     }
   }
-  const filtered = words.filter((w) =>
-    `${w.word} ${w.meaning}`.toLowerCase().includes(query.toLowerCase()),
-  );
+  async function remove(id: string) {
+    if (busy.includes(id)) return;
+    setBusy((previous) => [...previous, id]);
+    setError("");
+    try {
+      if (local) setWords(deleteLocalWord(id));
+      else {
+        await api(`/words/${encodeURIComponent(id)}`, { method: "DELETE" });
+        setWords((previous) => previous.filter((word) => word.id !== id));
+      }
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Chưa xóa được từ. Hãy thử lại.",
+      );
+    } finally {
+      setBusy((previous) => previous.filter((value) => value !== id));
+    }
+  }
+  const knownCount = words.filter((word) => word.known === true).length;
+  const unknownCount = words.length - knownCount;
+  const filtered = filterWords(words, filter, query);
+  const tabs: { id: WordFilter; label: string; count: number }[] = [
+    { id: "all", label: "Tất cả", count: words.length },
+    { id: "unknown", label: "Chưa biết", count: unknownCount },
+    { id: "known", label: "Đã biết", count: knownCount },
+  ];
   return (
     <>
       <Header />
@@ -60,70 +150,163 @@ export default function WordBook() {
           <em>Của riêng bạn.</em>
         </h1>
         <p className="words-description">
-          Mỗi từ là một câu chuyện bạn đã đọc. Quay lại ngữ cảnh để nhớ lâu hơn.
+          Lưu từ từ bài đọc, học theo ngữ cảnh và đánh dấu những từ bạn đã biết.
         </p>
+        <div className="wordbook-summary" aria-label="Thống kê sổ từ">
+          <div>
+            <Bookmark size={19} />
+            <strong>{words.length}</strong>
+            <span>Từ đã lưu</span>
+          </div>
+          <div>
+            <Circle size={19} />
+            <strong>{unknownCount}</strong>
+            <span>Chưa biết</span>
+          </div>
+          <div>
+            <CheckCircle2 size={19} />
+            <strong>{knownCount}</strong>
+            <span>Đã biết</span>
+          </div>
+        </div>
         <div className="words-top">
-          <span>
-            {words.length} từ đã lưu{" "}
-            {local && <small>· Lưu trên trình duyệt này</small>}
-          </span>
+          <div className="wordbook-filters" aria-label="Lọc trạng thái từ">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                aria-pressed={filter === tab.id}
+                className={filter === tab.id ? "active" : ""}
+                onClick={() => setFilter(tab.id)}
+              >
+                {tab.label}
+                <span>{tab.count}</span>
+              </button>
+            ))}
+          </div>
           <div className="search">
             <Search size={17} />
             <input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Tìm trong sổ từ…"
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Tìm từ hoặc nghĩa…"
               aria-label="Tìm từ đã lưu"
             />
           </div>
         </div>
         {local && (
           <div className="notice">
-            Bạn đang xem sổ từ trên thiết bị này. Đăng nhập Google để lưu từ vào
-            tài khoản.
+            Sổ từ đang lưu trên trình duyệt này. Trạng thái đã biết và các từ
+            bạn lưu sẽ được giữ lại khi mở lại trang. Đăng nhập Google để dùng
+            sổ từ trong tài khoản.
           </div>
         )}
-        {error && <div className="error-box">{error}</div>}
+        {error && (
+          <div className="error-box" role="alert">
+            <p>{error}</p>
+            <button onClick={() => setVersion((value) => value + 1)}>
+              Thử tải lại
+            </button>
+          </div>
+        )}
         {loading ? (
-          <div className="reader-loading">
+          <div className="reader-loading" role="status">
             <LoaderCircle className="spin" />
+            <span>Đang mở sổ từ…</span>
           </div>
         ) : filtered.length ? (
-          <div className="word-grid">
-            {filtered.map((w) => (
-              <article className="word-card" key={w.id}>
-                <div>
-                  <h2>{w.word}</h2>
-                  <button
-                    className="icon-button"
-                    title={`Xóa ${w.word}`}
-                    onClick={() => remove(w.id)}
+          <>
+            <p className="wordbook-results" role="status">
+              Hiển thị {filtered.length} từ
+              {query.trim() ? ` khớp với “${query.trim()}”` : ""}.
+            </p>
+            <div className="word-grid">
+              {filtered.map((word) => (
+                <article
+                  className={`word-card ${word.known ? "word-card-known" : ""}`}
+                  key={word.id}
+                >
+                  <div className="word-card-heading">
+                    <h2>{word.word}</h2>
+                    <button
+                      className="icon-button"
+                      title={`Xóa ${word.word}`}
+                      aria-label={`Xóa ${word.word}`}
+                      disabled={busy.includes(word.id)}
+                      onClick={() => remove(word.id)}
+                    >
+                      <Trash2 size={17} />
+                    </button>
+                  </div>
+                  <span
+                    className={`word-status ${word.known ? "known" : "unknown"}`}
                   >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-                <p>{w.meaning || "Chưa có định nghĩa"}</p>
-                {w.context && <blockquote>{w.context}</blockquote>}
-                {w.articleId && (
-                  <Link href={`/read/${w.articleId}`}>
-                    Về bài đọc gốc <ArrowUpRight size={15} />
-                  </Link>
-                )}
-              </article>
-            ))}
-          </div>
+                    {word.known ? (
+                      <CheckCircle2 size={13} />
+                    ) : (
+                      <Circle size={13} />
+                    )}
+                    {word.known ? "Đã biết" : "Chưa biết"}
+                  </span>
+                  <p>{word.meaning || "Chưa có định nghĩa"}</p>
+                  {word.context && <blockquote>{word.context}</blockquote>}
+                  <div className="word-card-actions">
+                    <button
+                      className="word-known-button"
+                      aria-label={`${word.known ? "Đánh dấu chưa biết" : "Đánh dấu đã biết"}: ${word.word}`}
+                      disabled={busy.includes(word.id)}
+                      onClick={() => changeKnown(word)}
+                    >
+                      {busy.includes(word.id) ? (
+                        <LoaderCircle size={15} className="spin" />
+                      ) : word.known ? (
+                        <RotateCcw size={15} />
+                      ) : (
+                        <CheckCircle2 size={15} />
+                      )}
+                      {word.known ? "Học lại từ này" : "Đánh dấu đã biết"}
+                    </button>
+                    {word.articleId && (
+                      <Link href={`/read/${word.articleId}`}>
+                        Bài đọc gốc <ArrowUpRight size={14} />
+                      </Link>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </>
         ) : (
           <div className="empty">
             <Bookmark size={42} />
             <h2>
-              {query
-                ? "Chưa tìm thấy từ này"
-                : "Sổ từ đang đợi câu chuyện đầu tiên"}
+              {words.length === 0
+                ? "Sổ từ đang đợi từ đầu tiên"
+                : query
+                  ? "Chưa tìm thấy từ phù hợp"
+                  : filter === "known"
+                    ? "Chưa có từ được đánh dấu đã biết"
+                    : "Bạn đã biết hết các từ trong sổ"}
             </h2>
-            <p>Mở một bài đọc, chạm vào từ mới và lưu lại cùng ngữ cảnh.</p>
-            <Link className="primary-button" href="/">
-              Tìm bài đọc <ArrowUpRight size={17} />
-            </Link>
+            <p>
+              {words.length === 0
+                ? "Mở bài đọc, bấm một từ và lưu nghĩa bạn muốn học."
+                : "Bạn có thể đổi bộ lọc hoặc tìm bằng từ khóa khác."}
+            </p>
+            {words.length === 0 ? (
+              <Link className="primary-button" href="/">
+                Tìm bài đọc <ArrowUpRight size={17} />
+              </Link>
+            ) : (
+              <button
+                className="primary-button"
+                onClick={() => {
+                  setFilter("all");
+                  setQuery("");
+                }}
+              >
+                Xem tất cả từ
+              </button>
+            )}
           </div>
         )}
       </main>

@@ -6,6 +6,12 @@
 
 **Nguồn đọc và cách học hằng ngày:** [BBC và gợi ý chọn bài](docs/READING-SOURCES.md).
 
+**Từ điển Anh–Việt:** [API, dữ liệu và thông tin nguồn](docs/DICTIONARY-SOURCES.md).
+
+**Kết nối tài khoản để deploy:** [GitHub → Vercel → Render](docs/CONNECT-SERVICES.md).
+
+Sổ từ tại `/words` hỗ trợ tìm kiếm, lọc Tất cả/Chưa biết/Đã biết, đổi trạng thái hai chiều và xóa từ. Từ cũ mặc định Chưa biết. Lưu lại nghĩa không làm mất trạng thái học. Khi chưa đăng nhập, sổ từ và trạng thái lưu trên trình duyệt; khi đăng nhập, dữ liệu thuộc tài khoản được lưu ở backend. Dọn bài báo sau 7 ngày không xóa sổ từ cá nhân.
+
 ## Chạy local
 
 Yêu cầu Node.js 22+ và pnpm. MySQL 8 được hỗ trợ; tạo database trước khi cấu hình kết nối.
@@ -76,7 +82,7 @@ Xem chi tiết adapter, JSON schema, SSE và transcription tại [backend/src/ai
 - Sau lượt nhập tin, job xóa bài có ngày đăng cách hiện tại quá 7 ngày. Ngày đăng được chuẩn hóa UTC; bài quá hạn trong RSS không được nhập lại. Ảnh và bản dịch liên quan xóa theo bài. Từ vựng cá nhân cùng câu ngữ cảnh được giữ lại.
 - Không dựng bài giả khi BBC lỗi. Bài có hạn chế truy cập, liveblog, multimedia hoặc cấu trúc chưa hỗ trợ có thể chỉ có tóm tắt. Ứng dụng báo trạng thái đó; không đảm bảo mọi loại bài BBC đều trích xuất đầy đủ.
 - Ảnh tải từ BBC trong job và lưu nhị phân BLOB trong MySQL, kèm MIME type, kích thước và URL nguồn. Frontend hiển thị bằng endpoint `/api/images/:id`, không hotlink BBC và chưa cần R2. Chỉ nhận định dạng ảnh được hỗ trợ, giới hạn kích thước; ảnh lỗi được ghi trạng thái. Ảnh trong reader có thể được trình bày lại thành thư viện thay vì đúng vị trí của trang gốc.
-- Từ điển hiện dùng Free Dictionary API, định nghĩa Anh–Anh; chưa phải từ điển Anh–Việt đầy đủ. Từ được lưu kèm ngữ cảnh bài đọc. Chưa đăng nhập thì frontend lưu trên thiết bị và ghi rõ chế độ này.
+- Từ điển ưu tiên API Anh–Việt miễn phí, có Wiktionary tiếng Việt dự phòng và ghi nguồn. Khi chỉ có định nghĩa Anh–Anh, giao diện ghi rõ ngôn ngữ. Có thể chọn nghĩa để lưu cùng câu ngữ cảnh. Chưa đăng nhập thì frontend lưu trên thiết bị và ghi rõ chế độ này.
 
 ## API chính
 
@@ -95,6 +101,7 @@ Xem chi tiết adapter, JSON schema, SSE và transcription tại [backend/src/ai
 | `POST /api/auth/logout` | Đăng xuất |
 | `GET / POST /api/words` | Từ đã lưu của tài khoản |
 | `DELETE /api/words/:id` | Xóa từ |
+| `PATCH /api/words/:id` | Đổi trạng thái với JSON `{ "known": true }` hoặc `{ "known": false }` |
 | `GET /api/ai/status` | Trạng thái và các model cấu hình |
 | `POST /api/ai/translation-jobs` | Tạo/tiếp tục job dịch, trả nhanh HTTP 202 |
 | `GET /api/ai/translation-jobs/:id` | Lấy trạng thái, kết quả đã lưu hoặc lỗi của job |

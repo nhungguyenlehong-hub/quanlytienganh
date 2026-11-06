@@ -58,6 +58,15 @@ export default function ArticleReader({ id }: { id: string }) {
       ) : (
         <span
           className="lookup-word"
+          role="button"
+          tabIndex={0}
+          aria-label={`Tra từ ${part}`}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              event.currentTarget.click();
+            }
+          }}
           data-word={part.replace(/^[^\p{L}]+|[^\p{L}'’-]+$/gu, "")}
           key={index}
         >

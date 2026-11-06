@@ -22,6 +22,8 @@ export type Word = {
   context?: string;
   articleId?: string;
   createdAt?: string;
+  known?: boolean;
+  knownAt?: string;
 };
 export class ApiError extends Error {
   constructor(
