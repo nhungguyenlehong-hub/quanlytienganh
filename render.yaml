@@ -1,0 +1,69 @@
+# Review the paid compute/disk plans in Render before applying this Blueprint.
+services:
+  - type: pserv
+    name: lingopress-mysql
+    runtime: docker
+    region: singapore
+    plan: 1c-2g
+    dockerfilePath: ./backend/Dockerfile.mysql
+    dockerContext: ./backend
+    autoDeployTrigger: off
+    disk:
+      name: mysql-data
+      mountPath: /var/lib/mysql
+      sizeGB: 10
+    envVars:
+      - key: MYSQL_DATABASE
+        value: lingopress
+      - key: MYSQL_USER
+        value: lingopress
+      - key: MYSQL_PASSWORD
+        generateValue: true
+      - key: MYSQL_ROOT_PASSWORD
+        generateValue: true
+
+  - type: web
+    name: lingopress-api
+    runtime: docker
+    region: singapore
+    plan: 0.5c-512mb
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    autoDeployTrigger: off
+    healthCheckPath: /api/health
+    maxShutdownDelaySeconds: 300
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: TRUST_PROXY
+        value: 1
+      - key: FRONTEND_URL
+        sync: false
+      - key: MYSQL_HOST
+        fromService:
+          name: lingopress-mysql
+          type: pserv
+          property: host
+      - key: MYSQL_PORT
+        value: 3306
+      - key: MYSQL_DATABASE
+        value: lingopress
+      - key: MYSQL_USER
+        value: lingopress
+      - key: MYSQL_PASSWORD
+        fromService:
+          name: lingopress-mysql
+          type: pserv
+          envVarKey: MYSQL_PASSWORD
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: GEMINI_TRANSLATION_MODEL
+        value: gemini-3.5-flash-lite
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_CALLBACK_URL
+        sync: false

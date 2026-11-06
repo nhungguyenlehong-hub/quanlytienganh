@@ -1,0 +1,12 @@
+import {Router} from 'express';
+import rateLimit from 'express-rate-limit';
+import {categories,listArticles,getArticle} from './service.js';
+import {loadImage} from './repository.js';
+import {getNewsJob,queueNewsIngest} from './jobs.js';
+export const readingRouter=Router();
+readingRouter.get('/categories',(_req,res)=>res.json({categories}));
+readingRouter.get('/articles',async(req,res)=>{const category=typeof req.query.category==='string'?req.query.category:undefined;const q=typeof req.query.q==='string'?req.query.q.slice(0,150):'';const page=Math.min(1000,Math.max(1,parseInt(String(req.query.page||1))||1));res.json(await listArticles(category,q,page));});
+readingRouter.get('/articles/:id',async(req,res)=>{const article=await getArticle(String(req.params.id));if(!article){res.status(404).json({error:'Article not found'});return;}res.json({article});});
+readingRouter.get('/jobs/news',(_req,res)=>res.json({job:getNewsJob()}));
+readingRouter.post('/feeds/refresh',rateLimit({windowMs:60000,limit:2}),(_req,res)=>res.status(202).json({job:queueNewsIngest()}));
+readingRouter.get('/images/:id',async(req,res)=>{const id=String(req.params.id);if(!/^[a-f0-9]{64}$/.test(id)){res.status(404).end();return;}const image=await loadImage(id);if(!image){res.status(404).end();return;}const etag=`"${image.hash}"`;res.set({'Content-Type':image.contentType,'ETag':etag,'Cache-Control':'public,max-age=3600','Cross-Origin-Resource-Policy':'cross-origin','X-Content-Type-Options':'nosniff'});if(req.headers['if-none-match']===etag){res.status(304).end();return;}res.send(image.bytes);});
